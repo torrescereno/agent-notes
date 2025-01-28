@@ -1,0 +1,21 @@
+[project]
+name = "agent-notes"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.3.14",
+    "langchain-anthropic>=0.3.3",
+    "langchain-community>=0.3.14",
+    "langchain-experimental>=0.3.4",
+    "langchain-ollama>=0.2.2",
+    "langchain-openai>=0.3.2",
+    "langgraph>=0.2.64",
+    "matplotlib>=3.10.0",
+    "python-dotenv>=1.0.1",
+    "tavily-python>=0.5.0",
+]
+
+[dependency-groups]
+dev = ["notebook>=7.3.2"]
