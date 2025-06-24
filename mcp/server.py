@@ -1,7 +1,9 @@
 import os
+import asyncio
 from typing import List, Dict, Any, Optional
 import httpx
-import asyncpg
+from psycopg_pool import AsyncConnectionPool
+from psycopg.rows import dict_row
 from mcp.server.fastmcp import FastMCP
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -9,84 +11,78 @@ from dataclasses import dataclass
 
 
 class Database:
-    """Clase para manejar la conexión a PostgreSQL"""
-    
-    def __init__(self, connection: asyncpg.Connection):
-        self.connection = connection
-    
-    @classmethod
-    async def connect(cls) -> 'Database':
-        """Crear una nueva conexión a la base de datos"""
-        host = os.getenv("DB_HOST", "localhost")
-        port = int(os.getenv("DB_PORT", "5432"))
-        user = os.getenv("DB_USER", "admin")
-        password = os.getenv("DB_PASSWORD", "admin123")
-        database = os.getenv("DB_NAME", "mcp")
+    """Clase para manejar la conexión a PostgreSQL con psycopg v3 y un pool de conexiones asíncrono."""
+
+    def __init__(self):
+        self.pool: Optional[AsyncConnectionPool] = None
+
+    async def connect(self):
+        """Inicializa el pool de conexiones asíncrono."""
+        if self.pool:
+            return
+            
+        conninfo = " ".join([
+            f"host={os.getenv('DB_HOST', 'localhost')}",
+            f"port={int(os.getenv('DB_PORT', '5432'))}",
+            f"user={os.getenv('DB_USER', 'admin')}",
+            f"password={os.getenv('DB_PASSWORD', 'admin123')}",
+            f"dbname={os.getenv('DB_NAME', 'mcp')}",
+        ])
         
         try:
-            connection = await asyncpg.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                database=database
-            )
-            print(f"✅ Conexión exitosa a PostgreSQL en {host}:{port}/{database}")
-            return cls(connection)
+            self.pool = AsyncConnectionPool(conninfo=conninfo, min_size=1, max_size=10, open=True)
+            print("✅ Pool de conexiones asíncrono a PostgreSQL creado.")
         except Exception as e:
-            print(f"❌ Error conectando a PostgreSQL: {e}")
+            print(f"❌ Error creando el pool de conexiones: {e}")
             raise
     
     async def disconnect(self):
-        """Cerrar la conexión a la base de datos"""
-        if self.connection:
-            await self.connection.close()
-            print("🔌 Conexión a PostgreSQL cerrada")
-    
+        """Cierra el pool de conexiones."""
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+            print("🔌 Pool de conexiones a PostgreSQL cerrado.")
+
     async def execute_query(self, query: str, *args) -> List[Dict[str, Any]]:
-        """Ejecutar una consulta SQL y retornar resultados como lista de diccionarios"""
-        try:
-            rows = await self.connection.fetch(query, *args)
-            return [dict(row) for row in rows]
-        except Exception as e:
-            print(f"❌ Error ejecutando consulta: {e}")
-            raise
-    
+        """Ejecuta una consulta (SELECT) y retorna una lista de diccionarios."""
+        if not self.pool:
+            raise RuntimeError("El pool de conexiones no está inicializado.")
+            
+        async with self.pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(query, args or ())
+                return await cursor.fetchall()
+
     async def execute_command(self, command: str, *args) -> str:
-        """Ejecutar un comando SQL (INSERT, UPDATE, DELETE)"""
-        try:
-            result = await self.connection.execute(command, *args)
-            return f"Comando ejecutado exitosamente: {result}"
-        except Exception as e:
-            print(f"❌ Error ejecutando comando: {e}")
-            raise
-    
+        """Ejecuta un comando (INSERT, UPDATE, DELETE)."""
+        if not self.pool:
+            raise RuntimeError("El pool de conexiones no está inicializado.")
+
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(command, args or ())
+                return cursor.statusmessage or "Comando ejecutado."
+
     async def create_table(self, table_name: str, columns: str) -> str:
-        """Crear una nueva tabla"""
         query = f"CREATE TABLE IF NOT EXISTS {table_name} ({columns})"
         return await self.execute_command(query)
     
     async def insert_record(self, table_name: str, data: Dict[str, Any]) -> str:
-        """Insertar un registro en una tabla"""
         columns = ', '.join(data.keys())
-        placeholders = ', '.join(f'${i+1}' for i in range(len(data)))
-        values = list(data.values())
-        
+        placeholders = ', '.join(['%s'] * len(data))
+        values = tuple(data.values())
         query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
         return await self.execute_command(query, *values)
     
     async def get_table_info(self, table_name: str) -> List[Dict[str, Any]]:
-        """Obtener información de la estructura de una tabla"""
         query = """
         SELECT column_name, data_type, is_nullable, column_default
         FROM information_schema.columns
-        WHERE table_name = $1
-        ORDER BY ordinal_position
+        WHERE table_name = %s
         """
         return await self.execute_query(query, table_name)
     
     async def list_tables(self) -> List[str]:
-        """Listar todas las tablas en la base de datos"""
         query = """
         SELECT table_name 
         FROM information_schema.tables 
@@ -104,15 +100,15 @@ class AppContext:
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
-    """Manage application lifecycle with type-safe context"""
-    db = await Database.connect()
+    """Gestiona el ciclo de vida de la aplicación con el pool de conexiones asíncrono."""
+    db = Database()
+    await db.connect()
     try:
         yield AppContext(db=db)
     finally:
         await db.disconnect()
 
 
-# Pass lifespan to server
 mcp = FastMCP("Demo SERVER", lifespan=app_lifespan)
 
 
@@ -128,9 +124,22 @@ async def fetch_weather(city: str) -> dict:
         resp = await client.get(
             f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/today?unitGroup=metric&include=current&key={WEATHER_API_KEY}&contentType=json"
         )
+    return resp.json()
 
-    data = resp.json()
-    return data
+
+@mcp.tool(name="list_tables", description="Listar todas las tablas en la base de datos")
+async def list_tables() -> List[str]:
+    """Listar todas las tablas disponibles en la base de datos"""
+    try:
+        ctx = mcp.get_context()
+        db = ctx.request_context.lifespan_context.db
+        tables = await db.list_tables()
+        if not tables:
+            return ["No hay tablas en la base de datos."]
+        return tables
+    except Exception as e:
+        print(f"❌ Error al listar tablas: {e}")
+        return [f"Error: {str(e)}"]
 
 
 @mcp.tool(name="test_connection", description="Probar la conexión a la base de datos PostgreSQL")
@@ -183,36 +192,9 @@ async def create_test_table() -> str:
         return f"❌ Error: {str(e)}"
 
 
-@mcp.tool(name="list_tables", description="Listar todas las tablas en la base de datos")
-async def list_tables() -> List[str]:
-    """Listar todas las tablas disponibles en la base de datos"""
-    print("🔍 Iniciando list_tables...")
-    
-    try:
-        ctx = mcp.get_context()
-        db = ctx.request_context.lifespan_context.db
-        print("📋 Ejecutando consulta para listar tablas...")
-        tables = await db.list_tables()
-        print(f"✅ Tablas encontradas: {tables}")
-        
-        if not tables:
-            print("ℹ️  No se encontraron tablas en la base de datos")
-            return ["No hay tablas en la base de datos"]
-        
-        return tables
-    except Exception as e:
-        print(f"❌ Error al listar tablas: {e}")
-        return [f"Error al listar tablas: {str(e)}"]
-
-
 @mcp.tool(name="create_table", description="Crear una nueva tabla en la base de datos")
 async def create_table(table_name: str, columns: str) -> str:
-    """Crear una nueva tabla con las columnas especificadas
-    
-    Args:
-        table_name: Nombre de la tabla
-        columns: Definición de columnas (ej: 'id SERIAL PRIMARY KEY, name VARCHAR(100), created_at TIMESTAMP DEFAULT NOW()')
-    """
+    """Crea una nueva tabla con las columnas especificadas."""
     try:
         ctx = mcp.get_context()
         db = ctx.request_context.lifespan_context.db
@@ -267,5 +249,3 @@ async def get_table_info(table_name: str) -> List[Dict[str, Any]]:
         return [{"error": f"Error obteniendo información de tabla: {str(e)}"}]
 
 
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
