@@ -21,3 +21,7 @@ async def fetch_weather(city: str) -> dict:
             f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/today?unitGroup=metric&include=current&key={WEATHER_API_KEY}&contentType=json"
         )
     return resp.json()
+
+
+if __name__ == "__main__":
+    mcp.run()
