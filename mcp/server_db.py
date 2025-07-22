@@ -1,9 +1,7 @@
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-import httpx
 import psycopg2
 import psycopg2.extensions
 import psycopg2.extras
@@ -57,7 +55,7 @@ async def app_lifespan(_: FastMCP) -> AsyncIterator[AppContext]:
         await db.disconnect()
 
 
-mcp = FastMCP("Demo SERVER", lifespan=app_lifespan)
+mcp = FastMCP("server db", lifespan=app_lifespan)
 
 
 @mcp.tool(name="execute_query", description="Ejecuta una consulta SELECT a PostgreSQL")
@@ -70,22 +68,6 @@ async def execute_query(query: str, ctx: Context) -> dict:
         return db.query(query)
     except Exception as e:
         return {"error": str(e)}
-
-
-@mcp.tool(
-    name="fetch_weather",
-    description="Consulta el clima actual de una ciudad usando la API de Visual Crossing.",
-)
-async def fetch_weather(city: str) -> dict:
-    WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-    if not WEATHER_API_KEY:
-        return {"error": "WEATHER_API_KEY no está configurada"}
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/today?unitGroup=metric&include=current&key={WEATHER_API_KEY}&contentType=json"
-        )
-    return resp.json()
 
 
 if __name__ == "__main__":
