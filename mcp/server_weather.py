@@ -25,4 +25,4 @@ async def fetch_weather(city: str) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio")

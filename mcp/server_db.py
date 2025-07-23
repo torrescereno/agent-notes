@@ -60,15 +60,15 @@ mcp = FastMCP("server db", lifespan=app_lifespan)
 
 @mcp.tool(name="execute_query", description="Ejecuta una consulta SELECT a PostgreSQL")
 async def execute_query(query: str, ctx: Context) -> dict:
-    db: AppContext = ctx.request_context.lifespan_context.db
+    context_app: AppContext = ctx.request_context.lifespan_context
 
     if not query.strip().lower().startswith("select"):
         return {"error": "Solo se permiten consultas SELECT por seguridad."}
     try:
-        return db.query(query)
+        return context_app.db.query(query)
     except Exception as e:
         return {"error": str(e)}
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio")
