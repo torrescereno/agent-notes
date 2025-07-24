@@ -4,7 +4,6 @@ import httpx
 
 from mcp.server.fastmcp import FastMCP
 
-
 mcp = FastMCP("server weather")
 
 
@@ -14,6 +13,7 @@ mcp = FastMCP("server weather")
 )
 async def fetch_weather(city: str) -> dict:
     WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+
     if not WEATHER_API_KEY:
         return {"error": "WEATHER_API_KEY no está configurada"}
 
@@ -21,6 +21,7 @@ async def fetch_weather(city: str) -> dict:
         resp = await client.get(
             f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/today?unitGroup=metric&include=current&key={WEATHER_API_KEY}&contentType=json"
         )
+
     return resp.json()
 
 
