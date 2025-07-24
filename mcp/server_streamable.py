@@ -13,7 +13,7 @@ mcp = FastMCP("stateful server")
 # Procesamiento de requests independientes con streaming
 # mcp = FastMCP("StatelessServer", stateless_http=True)
 
-# PARA: APIs REST tradicionales sin streaming
+# APIs REST tradicionales sin streaming
 # mcp = FastMCP("StatelessServer", stateless_http=True, json_response=True)
 
 
