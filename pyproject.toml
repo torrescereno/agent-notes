@@ -23,6 +23,9 @@ dependencies = [
   "psycopg2-binary>=2.9.10",
   "langchain-mcp-adapters>=0.1.9",
   "grandalf>=0.8",
+  "pytubefix>=9.4.1",
+  "openai-whisper>=20250625",
+  "setuptools-rust>=1.11.1",
 ]
 
 [dependency-groups]
