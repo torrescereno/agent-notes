@@ -26,6 +26,7 @@ dependencies = [
   "pytubefix>=9.4.1",
   "openai-whisper>=20250625",
   "setuptools-rust>=1.11.1",
+  "youtube-transcript-api>=1.2.1",
 ]
 
 [dependency-groups]
