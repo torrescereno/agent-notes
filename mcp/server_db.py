@@ -90,6 +90,16 @@ class Database:
 
         return self.execute_non_query(query)
 
+    def delete_record(self, table_name: str, condition: str) -> Dict[str, Any]:
+        query = f"DELETE FROM {table_name} WHERE {condition}"
+
+        return self.execute_non_query(query)
+
+    def drop_table(self, table_name: str) -> Dict[str, Any]:
+        query = f"DROP TABLE IF EXISTS {table_name}"
+
+        return self.execute_non_query(query)
+
 
 @dataclass
 class AppContext:
@@ -306,6 +316,81 @@ async def insert_record(
 
     except Exception as e:
         return {"success": False, "error": f"Error insertando registro: {str(e)}"}
+
+
+@mcp.tool(
+    name="delete_record",
+    description="Eliminar un registro de una tabla",
+)
+async def delete_record(table_name: str, condition: str, ctx: Context):
+    """Elimina un registro de una tabla existente en la base de datos.
+
+    Esta función ejecuta una sentencia DELETE con la condición especificada.
+    La operación se realiza dentro de una transacción que se revierte automáticamente
+    en caso de error, manteniendo la integridad de los datos.
+
+    Args:
+        table_name (str): Nombre de la tabla de donde eliminar el registro.
+        condition (str): Condición para identificar el registro a eliminar.
+                        Ejemplo: "id = 1" o "email = 'test@email.com'"
+
+    Returns:
+        Dict[str, Any]: Diccionario con el resultado de la operación:
+                       - 'success': True si la eliminación fue exitosa, False en caso contrario
+                       - 'message': Mensaje descriptivo del resultado (si exitoso)
+                       - 'error': Descripción del error (si falló)
+
+    Note:
+        - La tabla debe existir previamente
+        - La condición debe ser válida para identificar un registro único
+        - Si no se encuentra ningún registro que coincida, no se realizará ninguna acción
+    """
+    try:
+        context_app: AppContext = ctx.request_context.lifespan_context
+        result = context_app.db.delete_record(table_name, condition)
+
+        if result["success"]:
+            return {
+                "success": True,
+                "message": f"Registro eliminado correctamente de '{table_name}'",
+            }
+        else:
+            return {"success": False, "error": result["error"]}
+    except Exception as e:
+        return {"success": False, "error": f"Error eliminando registro: {str(e)}"}
+
+
+@mcp.tool(
+    name="drop_table",
+    description="Eliminar una tabla de la base de datos",
+)
+async def drop_table(table_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Elimina una tabla de la base de datos PostgreSQL.
+
+    Esta función ejecuta una sentencia DROP TABLE para eliminar la tabla especificada.
+    La operación se realiza dentro de una transacción que se revierte automáticamente
+    en caso de error, manteniendo la integridad de los datos.
+
+    Args:
+        table_name (str): Nombre de la tabla a eliminar.
+
+    Returns:
+        Dict[str, Any]: Diccionario con el resultado de la operación:
+                       - 'success': True si la eliminación fue exitosa, False en caso contrario
+                       - 'message': Mensaje descriptivo del resultado (si exitoso)
+                       - 'error': Descripción del error (si falló)
+
+    Note:
+        - La tabla debe existir previamente
+        - Esta operación eliminará permanentemente todos los datos de la tabla
+    """
+    try:
+        context_app: AppContext = ctx.request_context.lifespan_context
+        return context_app.db.drop_table(table_name)
+
+    except Exception as e:
+        return {"success": False, "error": f"Error eliminando tabla: {str(e)}"}
 
 
 if __name__ == "__main__":
